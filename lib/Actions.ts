@@ -211,18 +211,40 @@ class ActionBase<S, R> {
     return this._storeEntity(commit, payload, action);
   }
 
-  _confirmActionType(queue: string, { state, commit }: ActionContext<S, R>) {
+  _confirmActionType(
+    queue: string,
+    { state, commit }: ActionContext<S, R>,
+    sequential = false
+  ) {
     const model = this._models[queue];
     if (get(state, `${model.plural}.hasAction`)) {
       const queues = get(state, `${model.plural}.actionQueue`);
-      return Promise.all(
+
+      // eslint-disable-next-line
+      let p: Promise<any> = Promise.resolve();
+
+      if (sequential) {
         flatMap(queues, (entities: Array<QueuePayload>, action: Method) =>
           map(entities, async entity => {
             const payload = { id: entity.data.id, ...entity };
-            this._processAction(action, payload, commit);
+            p = p.then(() =>
+              Promise.resolve(this._processAction(action, payload, commit))
+            );
           })
-        )
-      ).then(() => commit(`RESET_QUEUE_${model.name}`));
+        );
+      } else {
+        p = p.then(() =>
+          Promise.all(
+            flatMap(queues, (entities: Array<QueuePayload>, action: Method) =>
+              map(entities, async entity => {
+                const payload = { id: entity.data.id, ...entity };
+                this._processAction(action, payload, commit);
+              })
+            )
+          )
+        );
+      }
+      return p.then(() => commit(`RESET_QUEUE_${model.name}`));
     }
     return Promise.resolve();
   }
@@ -264,6 +286,7 @@ export default class Actions<S, R> implements ActionTree<S, R> {
   // queueActionWatcher: Action<S, R>;
   queueAction: Action<S, R>;
   processActionQueue: Action<S, R>;
+  sequentialProcessActionQueue: Action<S, R>;
   cancelAction: Action<S, R>;
   cancelActionQueue: Action<S, R>;
   reset: Action<S, R>;
@@ -324,6 +347,18 @@ export default class Actions<S, R> implements ActionTree<S, R> {
         );
       }
       return base._confirmActionType(queue, context);
+    };
+
+    this.sequentialProcessActionQueue = (
+      context: ActionContext<S, R>,
+      queue: string | Array<string>
+    ) => {
+      if (isArray(queue)) {
+        return Promise.all(
+          flatMap(queue, q => base._confirmActionType(q, context, true))
+        );
+      }
+      return base._confirmActionType(queue, context, true);
     };
 
     this.cancelActionQueue = (
