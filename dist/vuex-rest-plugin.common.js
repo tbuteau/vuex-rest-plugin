@@ -1793,7 +1793,7 @@ module.exports = isForced;
 /***/ }),
 
 /***/ "96cf":
-/***/ (function(module, exports) {
+/***/ (function(module, exports, __webpack_require__) {
 
 /**
  * Copyright (c) 2014-present, Facebook, Inc.
@@ -1802,7 +1802,7 @@ module.exports = isForced;
  * LICENSE file in the root directory of this source tree.
  */
 
-!(function(global) {
+var runtime = (function (exports) {
   "use strict";
 
   var Op = Object.prototype;
@@ -1812,23 +1812,6 @@ module.exports = isForced;
   var iteratorSymbol = $Symbol.iterator || "@@iterator";
   var asyncIteratorSymbol = $Symbol.asyncIterator || "@@asyncIterator";
   var toStringTagSymbol = $Symbol.toStringTag || "@@toStringTag";
-
-  var inModule = typeof module === "object";
-  var runtime = global.regeneratorRuntime;
-  if (runtime) {
-    if (inModule) {
-      // If regeneratorRuntime is defined globally and we're in a module,
-      // make the exports object identical to regeneratorRuntime.
-      module.exports = runtime;
-    }
-    // Don't bother evaluating the rest of this file if the runtime was
-    // already defined globally.
-    return;
-  }
-
-  // Define the runtime globally (as expected by generated code) as either
-  // module.exports (if we're in a module) or a new, empty object.
-  runtime = global.regeneratorRuntime = inModule ? module.exports : {};
 
   function wrap(innerFn, outerFn, self, tryLocsList) {
     // If outerFn provided and outerFn.prototype is a Generator, then outerFn.prototype instanceof Generator.
@@ -1842,7 +1825,7 @@ module.exports = isForced;
 
     return generator;
   }
-  runtime.wrap = wrap;
+  exports.wrap = wrap;
 
   // Try/catch helper to minimize deoptimizations. Returns a completion
   // record like context.tryEntries[i].completion. This interface could
@@ -1913,7 +1896,7 @@ module.exports = isForced;
     });
   }
 
-  runtime.isGeneratorFunction = function(genFun) {
+  exports.isGeneratorFunction = function(genFun) {
     var ctor = typeof genFun === "function" && genFun.constructor;
     return ctor
       ? ctor === GeneratorFunction ||
@@ -1923,7 +1906,7 @@ module.exports = isForced;
       : false;
   };
 
-  runtime.mark = function(genFun) {
+  exports.mark = function(genFun) {
     if (Object.setPrototypeOf) {
       Object.setPrototypeOf(genFun, GeneratorFunctionPrototype);
     } else {
@@ -1940,7 +1923,7 @@ module.exports = isForced;
   // `yield regeneratorRuntime.awrap(x)`, so that the runtime can test
   // `hasOwn.call(value, "__await")` to determine if the yielded value is
   // meant to be awaited.
-  runtime.awrap = function(arg) {
+  exports.awrap = function(arg) {
     return { __await: arg };
   };
 
@@ -1965,22 +1948,14 @@ module.exports = isForced;
         return Promise.resolve(value).then(function(unwrapped) {
           // When a yielded Promise is resolved, its final value becomes
           // the .value of the Promise<{value,done}> result for the
-          // current iteration. If the Promise is rejected, however, the
-          // result for this iteration will be rejected with the same
-          // reason. Note that rejections of yielded Promises are not
-          // thrown back into the generator function, as is the case
-          // when an awaited Promise is rejected. This difference in
-          // behavior between yield and await is important, because it
-          // allows the consumer to decide what to do with the yielded
-          // rejection (swallow it and continue, manually .throw it back
-          // into the generator, abandon iteration, whatever). With
-          // await, by contrast, there is no opportunity to examine the
-          // rejection reason outside the generator function, so the
-          // only option is to throw it from the await expression, and
-          // let the generator function handle the exception.
+          // current iteration.
           result.value = unwrapped;
           resolve(result);
-        }, reject);
+        }, function(error) {
+          // If a rejected Promise was yielded, throw the rejection back
+          // into the async generator function so it can be handled there.
+          return invoke("throw", error, resolve, reject);
+        });
       }
     }
 
@@ -2023,17 +1998,17 @@ module.exports = isForced;
   AsyncIterator.prototype[asyncIteratorSymbol] = function () {
     return this;
   };
-  runtime.AsyncIterator = AsyncIterator;
+  exports.AsyncIterator = AsyncIterator;
 
   // Note that simple async functions are implemented on top of
   // AsyncIterator objects; they just return a Promise for the value of
   // the final result produced by the iterator.
-  runtime.async = function(innerFn, outerFn, self, tryLocsList) {
+  exports.async = function(innerFn, outerFn, self, tryLocsList) {
     var iter = new AsyncIterator(
       wrap(innerFn, outerFn, self, tryLocsList)
     );
 
-    return runtime.isGeneratorFunction(outerFn)
+    return exports.isGeneratorFunction(outerFn)
       ? iter // If outerFn is a generator, return the full iterator.
       : iter.next().then(function(result) {
           return result.done ? result.value : iter.next();
@@ -2130,7 +2105,8 @@ module.exports = isForced;
       context.delegate = null;
 
       if (context.method === "throw") {
-        if (delegate.iterator.return) {
+        // Note: ["return"] must be used for ES3 parsing compatibility.
+        if (delegate.iterator["return"]) {
           // If the delegate iterator has a return method, give it a
           // chance to clean up.
           context.method = "return";
@@ -2250,7 +2226,7 @@ module.exports = isForced;
     this.reset(true);
   }
 
-  runtime.keys = function(object) {
+  exports.keys = function(object) {
     var keys = [];
     for (var key in object) {
       keys.push(key);
@@ -2311,7 +2287,7 @@ module.exports = isForced;
     // Return an iterator with no values.
     return { next: doneResult };
   }
-  runtime.values = values;
+  exports.values = values;
 
   function doneResult() {
     return { value: undefined, done: true };
@@ -2516,12 +2492,35 @@ module.exports = isForced;
       return ContinueSentinel;
     }
   };
-})(
-  // In sloppy mode, unbound `this` refers to the global object, fallback to
-  // Function constructor if we're in global strict mode. That is sadly a form
-  // of indirect eval which violates Content Security Policy.
-  (function() { return this })() || Function("return this")()
-);
+
+  // Regardless of whether this script is executing as a CommonJS module
+  // or not, return the runtime object so that we can declare the variable
+  // regeneratorRuntime in the outer scope, which allows this module to be
+  // injected easily by `bin/regenerator --include-runtime script.js`.
+  return exports;
+
+}(
+  // If this script is executing as a CommonJS module, use module.exports
+  // as the regeneratorRuntime namespace. Otherwise create a new empty
+  // object. Either way, the resulting object will be used to initialize
+  // the regeneratorRuntime variable at the top of this file.
+   true ? module.exports : undefined
+));
+
+try {
+  regeneratorRuntime = runtime;
+} catch (accidentalStrictMode) {
+  // This module should not be running in strict mode, so the above
+  // assignment should always work unless something is misconfigured. Just
+  // in case runtime.js accidentally runs in strict mode, we can escape
+  // strict mode using a global Function call. This could conceivably fail
+  // if a Content Security Policy forbids using Function, but in that case
+  // the proper solution is to fix the accidental strict mode problem. If
+  // you've misconfigured your bundler to force strict mode and applied a
+  // CSP to forbid Function, and you're not willing to fix either of those
+  // problems, please detail your unique predicament in a GitHub issue.
+  Function("r", "regeneratorRuntime = r")(runtime);
+}
 
 
 /***/ }),
@@ -10316,41 +10315,84 @@ function () {
 
       var state = _ref2.state,
           commit = _ref2.commit;
+      var sequential = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
       var model = this._models[queue];
 
       if (lodash_es_get(state, "".concat(model.plural, ".hasAction"))) {
-        var queues = lodash_es_get(state, "".concat(model.plural, ".actionQueue"));
-        return Promise.all(lodash_es_flatMap(queues, function (entities, action) {
-          return lodash_es_map(entities,
-          /*#__PURE__*/
-          function () {
-            var _ref3 = _asyncToGenerator(
+        var queues = lodash_es_get(state, "".concat(model.plural, ".actionQueue")); // eslint-disable-next-line
+
+        var p = Promise.resolve();
+
+        if (sequential) {
+          lodash_es_flatMap(queues, function (entities, action) {
+            return lodash_es_map(entities,
             /*#__PURE__*/
-            regeneratorRuntime.mark(function _callee7(entity) {
-              var payload;
-              return regeneratorRuntime.wrap(function _callee7$(_context7) {
-                while (1) {
-                  switch (_context7.prev = _context7.next) {
-                    case 0:
-                      payload = _objectSpread2({
-                        id: entity.data.id
-                      }, entity);
+            function () {
+              var _ref3 = _asyncToGenerator(
+              /*#__PURE__*/
+              regeneratorRuntime.mark(function _callee7(entity) {
+                var payload;
+                return regeneratorRuntime.wrap(function _callee7$(_context7) {
+                  while (1) {
+                    switch (_context7.prev = _context7.next) {
+                      case 0:
+                        payload = _objectSpread2({
+                          id: entity.data.id
+                        }, entity);
+                        p = p.then(function () {
+                          return Promise.resolve(_this._processAction(action, payload, commit));
+                        });
 
-                      _this._processAction(action, payload, commit);
-
-                    case 2:
-                    case "end":
-                      return _context7.stop();
+                      case 2:
+                      case "end":
+                        return _context7.stop();
+                    }
                   }
-                }
-              }, _callee7);
-            }));
+                }, _callee7);
+              }));
 
-            return function (_x14) {
-              return _ref3.apply(this, arguments);
-            };
-          }());
-        })).then(function () {
+              return function (_x14) {
+                return _ref3.apply(this, arguments);
+              };
+            }());
+          });
+        } else {
+          p = p.then(function () {
+            return Promise.all(lodash_es_flatMap(queues, function (entities, action) {
+              return lodash_es_map(entities,
+              /*#__PURE__*/
+              function () {
+                var _ref4 = _asyncToGenerator(
+                /*#__PURE__*/
+                regeneratorRuntime.mark(function _callee8(entity) {
+                  var payload;
+                  return regeneratorRuntime.wrap(function _callee8$(_context8) {
+                    while (1) {
+                      switch (_context8.prev = _context8.next) {
+                        case 0:
+                          payload = _objectSpread2({
+                            id: entity.data.id
+                          }, entity);
+
+                          _this._processAction(action, payload, commit);
+
+                        case 2:
+                        case "end":
+                          return _context8.stop();
+                      }
+                    }
+                  }, _callee8);
+                }));
+
+                return function (_x15) {
+                  return _ref4.apply(this, arguments);
+                };
+              }());
+            }));
+          });
+        }
+
+        return p.then(function () {
           return commit("RESET_QUEUE_".concat(model.name));
         });
       }
@@ -10362,41 +10404,41 @@ function () {
     value: function () {
       var _cancelActionType2 = _asyncToGenerator(
       /*#__PURE__*/
-      regeneratorRuntime.mark(function _callee8(queue, _ref4) {
+      regeneratorRuntime.mark(function _callee9(queue, _ref5) {
         var state, commit, model, originIds, origin;
-        return regeneratorRuntime.wrap(function _callee8$(_context8) {
+        return regeneratorRuntime.wrap(function _callee9$(_context9) {
           while (1) {
-            switch (_context8.prev = _context8.next) {
+            switch (_context9.prev = _context9.next) {
               case 0:
-                state = _ref4.state, commit = _ref4.commit;
+                state = _ref5.state, commit = _ref5.commit;
                 model = this._models[queue];
 
                 if (!lodash_es_get(state, "".concat(model.plural, ".hasAction"))) {
-                  _context8.next = 12;
+                  _context9.next = 12;
                   break;
                 }
 
                 originIds = lodash_es_keys(lodash_es_get(state, "".concat(model.plural, ".actionQueue.delete"), [])).concat(lodash_es_keys(lodash_es_get(state, "".concat(model.plural, ".actionQueue.post"), [])), lodash_es_keys(lodash_es_get(state, "".concat(model.plural, ".actionQueue.patch"), [])));
                 origin = lodash_es_at(lodash_es_get(state, "".concat(model.plural, ".originItems")), originIds);
-                _context8.t0 = commit;
-                _context8.t1 = "ADD_".concat(model.name);
-                _context8.next = 9;
+                _context9.t0 = commit;
+                _context9.t1 = "ADD_".concat(model.name);
+                _context9.next = 9;
                 return applyModifier(ModifierName.afterQueue, queue, this._models, origin);
 
               case 9:
-                _context8.t2 = _context8.sent;
-                (0, _context8.t0)(_context8.t1, _context8.t2);
+                _context9.t2 = _context9.sent;
+                (0, _context9.t0)(_context9.t1, _context9.t2);
                 commit("RESET_QUEUE_".concat(model.name));
 
               case 12:
               case "end":
-                return _context8.stop();
+                return _context9.stop();
             }
           }
-        }, _callee8, this);
+        }, _callee9, this);
       }));
 
-      function _cancelActionType(_x15, _x16) {
+      function _cancelActionType(_x16, _x17) {
         return _cancelActionType2.apply(this, arguments);
       }
 
@@ -10415,80 +10457,26 @@ var Actions_Actions = function Actions(axios, models, dataPath) {
   this.get =
   /*#__PURE__*/
   function () {
-    var _ref5 = _asyncToGenerator(
+    var _ref6 = _asyncToGenerator(
     /*#__PURE__*/
-    regeneratorRuntime.mark(function _callee9(_ref6, payload) {
+    regeneratorRuntime.mark(function _callee10(_ref7, payload) {
       var commit, state, entity;
-      return regeneratorRuntime.wrap(function _callee9$(_context9) {
-        while (1) {
-          switch (_context9.prev = _context9.next) {
-            case 0:
-              commit = _ref6.commit, state = _ref6.state;
-              entity = base._getEntity(state, payload);
-
-              if (!(payload.forceFetch || !entity)) {
-                _context9.next = 6;
-                break;
-              }
-
-              return _context9.abrupt("return", base._fetchEntity(commit, payload));
-
-            case 6:
-              return _context9.abrupt("return", entity);
-
-            case 7:
-            case "end":
-              return _context9.stop();
-          }
-        }
-      }, _callee9);
-    }));
-
-    return function (_x17, _x18) {
-      return _ref5.apply(this, arguments);
-    };
-  }();
-
-  this.post = function (_ref7, payload) {
-    var commit = _ref7.commit;
-    return base._storeEntity(commit, payload);
-  };
-
-  this.patch = function (_ref8, payload) {
-    var commit = _ref8.commit;
-    return base._storeEntity(commit, payload, "patch");
-  };
-
-  this.delete = function (_ref9, payload) {
-    var commit = _ref9.commit;
-    return base._deleteEntity(commit, payload);
-  };
-
-  this.add = function (_ref10, payload) {
-    var commit = _ref10.commit;
-    return base._addEntity(commit, payload);
-  };
-
-  this.queueAction =
-  /*#__PURE__*/
-  function () {
-    var _ref11 = _asyncToGenerator(
-    /*#__PURE__*/
-    regeneratorRuntime.mark(function _callee10(_ref12, payload) {
-      var commit;
       return regeneratorRuntime.wrap(function _callee10$(_context10) {
         while (1) {
           switch (_context10.prev = _context10.next) {
             case 0:
-              commit = _ref12.commit;
-              _context10.t0 = commit;
-              _context10.t1 = "QUEUE_ACTION_".concat(base._getModel(payload).name);
-              _context10.next = 5;
-              return base._getQueuePayloadWithModifiers(payload);
+              commit = _ref7.commit, state = _ref7.state;
+              entity = base._getEntity(state, payload);
 
-            case 5:
-              _context10.t2 = _context10.sent;
-              return _context10.abrupt("return", (0, _context10.t0)(_context10.t1, _context10.t2));
+              if (!(payload.forceFetch || !entity)) {
+                _context10.next = 6;
+                break;
+              }
+
+              return _context10.abrupt("return", base._fetchEntity(commit, payload));
+
+            case 6:
+              return _context10.abrupt("return", entity);
 
             case 7:
             case "end":
@@ -10498,13 +10486,67 @@ var Actions_Actions = function Actions(axios, models, dataPath) {
       }, _callee10);
     }));
 
-    return function (_x19, _x20) {
-      return _ref11.apply(this, arguments);
+    return function (_x18, _x19) {
+      return _ref6.apply(this, arguments);
     };
   }();
 
-  this.processAction = function (_ref13, payload) {
-    var commit = _ref13.commit;
+  this.post = function (_ref8, payload) {
+    var commit = _ref8.commit;
+    return base._storeEntity(commit, payload);
+  };
+
+  this.patch = function (_ref9, payload) {
+    var commit = _ref9.commit;
+    return base._storeEntity(commit, payload, "patch");
+  };
+
+  this.delete = function (_ref10, payload) {
+    var commit = _ref10.commit;
+    return base._deleteEntity(commit, payload);
+  };
+
+  this.add = function (_ref11, payload) {
+    var commit = _ref11.commit;
+    return base._addEntity(commit, payload);
+  };
+
+  this.queueAction =
+  /*#__PURE__*/
+  function () {
+    var _ref12 = _asyncToGenerator(
+    /*#__PURE__*/
+    regeneratorRuntime.mark(function _callee11(_ref13, payload) {
+      var commit;
+      return regeneratorRuntime.wrap(function _callee11$(_context11) {
+        while (1) {
+          switch (_context11.prev = _context11.next) {
+            case 0:
+              commit = _ref13.commit;
+              _context11.t0 = commit;
+              _context11.t1 = "QUEUE_ACTION_".concat(base._getModel(payload).name);
+              _context11.next = 5;
+              return base._getQueuePayloadWithModifiers(payload);
+
+            case 5:
+              _context11.t2 = _context11.sent;
+              return _context11.abrupt("return", (0, _context11.t0)(_context11.t1, _context11.t2));
+
+            case 7:
+            case "end":
+              return _context11.stop();
+          }
+        }
+      }, _callee11);
+    }));
+
+    return function (_x20, _x21) {
+      return _ref12.apply(this, arguments);
+    };
+  }();
+
+  this.processAction = function (_ref14, payload) {
+    var commit = _ref14.commit;
     return base._processAction(payload.action, payload.payload, commit);
   };
 
@@ -10518,6 +10560,16 @@ var Actions_Actions = function Actions(axios, models, dataPath) {
     return base._confirmActionType(queue, context);
   };
 
+  this.sequentialProcessActionQueue = function (context, queue) {
+    if (lodash_es_isArray(queue)) {
+      return Promise.all(lodash_es_flatMap(queue, function (q) {
+        return base._confirmActionType(q, context, true);
+      }));
+    }
+
+    return base._confirmActionType(queue, context, true);
+  };
+
   this.cancelActionQueue = function (context, payload) {
     if (lodash_es_isArray(payload)) {
       lodash_es_forEach(payload, function (p) {
@@ -10528,8 +10580,8 @@ var Actions_Actions = function Actions(axios, models, dataPath) {
     }
   };
 
-  this.cancelAction = function (_ref14, payload) {
-    var commit = _ref14.commit;
+  this.cancelAction = function (_ref15, payload) {
+    var commit = _ref15.commit;
 
     var model = base._getModel(payload);
 
